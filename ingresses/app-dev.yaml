@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+  namespace: app-dev
+  labels:
+    app: app
+    environment: dev
+  annotations:
+    # For nginx ingress controller
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # For cert-manager (automatic SSL)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    
+    # Add other ingress annotations as needed
+    # nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  ingressClassName: nginx  # Change based on your ingress controller
+  tls:
+  - hosts:
+    - my-app-dev.example.com  # Replace with your actual domain
+    secretName: app-dev-tls
+  rules:
+  - host: my-app-dev.example.com  # Replace with your actual domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app
+            port:
+              number: 80

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: app-dev
+  labels:
+    app: app
+    environment: dev
+data:
+  # Application configuration
+  ENVIRONMENT: "dev"
+  LOG_LEVEL: "DEBUG"

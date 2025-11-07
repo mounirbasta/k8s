@@ -1,0 +1,213 @@
+# My App - Kubernetes Manifests
+
+GitOps repository for deploying My App to Kubernetes clusters.
+
+## Repository Structure
+
+```
+.
+├── namespaces/          # Namespace definitions per environment
+├── deployments/         # Deployment manifests per environment
+├── services/            # Service manifests per environment
+├── configmaps/          # ConfigMap manifests per environment
+├── secrets/             # Secret manifests per environment
+└── ingresses/           # Ingress manifests per environment
+```
+
+## Current Environments
+
+- **dev**: Development environment with 1 replica
+
+## Application Details
+
+- **Base Image**: python:3.9-slim-buster
+- **Port**: 5000
+- **Health Check**: `/health` endpoint
+- **Security**: Runs as non-root user (UID 1000)
+
+## Prerequisites
+
+- Kubernetes cluster 
+- kubectl configured
+- Ingress controller (nginx recommended)
+- cert-manager (optional, for automatic SSL)
+
+## Deployment Instructions
+
+### Apply All Manifests (Recommended Order)
+
+```bash
+# 1. Create namespace
+kubectl apply -f namespaces/app-dev.yaml
+
+# 2. Create configmap and secrets
+kubectl apply -f configmaps/app-dev.yaml
+kubectl apply -f secrets/app-dev.yaml
+
+# 3. Create deployment
+kubectl apply -f deployments/app-dev.yaml
+
+# 4. Create service
+kubectl apply -f services/app-dev.yaml
+
+# 5. Create ingress (optional)
+kubectl apply -f ingresses/app-dev.yaml
+```
+
+### Or Apply All at Once
+
+```bash
+kubectl apply -f namespaces/
+kubectl apply -f configmaps/
+kubectl apply -f secrets/
+kubectl apply -f deployments/
+kubectl apply -f services/
+kubectl apply -f ingresses/
+```
+
+## Configuration
+
+### Before Deploying
+
+1. **Update Docker Image**: Edit `deployments/app-dev.yaml`
+   ```yaml
+   image: your-registry/my-app:dev-latest
+   ```
+
+2. **Update Domain**: Edit `ingresses/app-dev.yaml`
+   ```yaml
+   host: my-app-dev.example.com
+   ```
+
+3. **Add Secrets**: Edit `secrets/app-dev.yaml` with base64 encoded values
+   ```bash
+   echo -n "your-secret-value" | base64
+   ```
+
+4. **Add ConfigMap Values**: Edit `configmaps/app-dev.yaml` with your environment variables
+
+### Environment Variables
+
+The application uses environment variables from:
+- ConfigMap: `app-config` (non-sensitive config)
+- Secret: `app-secrets` (sensitive data)
+
+## Monitoring
+
+### Check Deployment Status
+
+```bash
+kubectl get all -n app-dev
+```
+
+### View Logs
+
+```bash
+kubectl logs -f deployment/my-app -n app-dev
+```
+
+### Check Pod Health
+
+```bash
+kubectl describe pod -l app=my-app -n app-dev
+```
+
+### Port Forward for Local Testing
+
+```bash
+kubectl port-forward svc/my-app 8080:80 -n app-dev
+# Access at http://localhost:8080
+```
+
+## Resource Limits
+
+### Dev Environment
+- CPU Request: 100m
+- CPU Limit: 500m
+- Memory Request: 128Mi
+- Memory Limit: 512Mi
+
+## Health Checks
+
+- **Liveness Probe**: Checks if container is alive (restarts if failing)
+- **Readiness Probe**: Checks if container can accept traffic
+- **Endpoint**: `GET /health` on port 5000
+
+## Security Features
+
+- Non-root user (UID 1000)
+- Read-only root filesystem capability
+- Dropped all Linux capabilities
+- No privilege escalation
+
+## Troubleshooting
+
+### Pod Not Starting
+
+```bash
+kubectl describe pod -l app=app -n app-dev
+kubectl logs -l app=app -n app-dev
+```
+
+### Health Check Failing
+
+Ensure your application has a `/health` endpoint that returns 200 OK.
+
+### Image Pull Errors
+
+Check image registry credentials:
+```bash
+kubectl get events -n app-dev
+```
+
+## GitOps Integration
+
+### ArgoCD
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-dev
+spec:
+  source:
+    repoURL: https://github.com/your-org/your-repo
+    targetRevision: main
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: my-app-dev
+```
+
+### Flux
+
+```yaml
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: my-app-dev
+spec:
+  interval: 5m
+  path: ./
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: my-app-repo
+```
+
+## Adding More Environments
+
+To add staging or production:
+
+1. Copy dev manifests
+2. Rename files: `app-staging.yaml`, `app-production.yaml`
+3. Update namespace in each file
+4. Adjust replicas and resources in deployment
+5. Update domain in ingress
+
+## Notes
+
+- Always test changes in dev before promoting to production
+- Use proper secret management (External Secrets, Sealed Secrets, or Vault)
+- Monitor resource usage and adjust limits accordingly
+- Keep this README updated with environment-specific details
