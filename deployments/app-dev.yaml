@@ -25,7 +25,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: app
-          image: europe-west3-docker.pkg.dev/optical-legend-477521-b8/task/task:735b9f8ebd834b03b57797f035c04ec216651093
+          image: europe-west3-docker.pkg.dev/optical-legend-477521-b8/task/task:3a65cb50b5a65bffba8392825a43f1b895b09e3a
           imagePullPolicy: Never
           ports:
             - containerPort: 5000
