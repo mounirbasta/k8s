@@ -10,7 +10,7 @@ env:
   ARGOCD_APP_NAME: app-dev
   APP_NAMESPACE: app-dev
   APP_DEPLOYMENT: app
-  HEALTH_CHECK_TIMEOUT: 300
+  HEALTH_CHECK_TIMEOUT: 100
   HEALTH_CHECK_INTERVAL: 15
 
 jobs:
@@ -127,9 +127,8 @@ jobs:
             if [ "$DEPLOYMENT_HEALTH" = "Degraded" ]; then
               echo "::error::Deployment is Degraded!"
               echo "Message: $DEPLOYMENT_MESSAGE"
-              argocd app get ${{ env.ARGOCD_APP_NAME }} \
-                --resource apps:Deployment:${{ env.APP_NAMESPACE }}/${{ env.APP_DEPLOYMENT }}
               echo "deployment_failed=true" >> $GITHUB_OUTPUT
+              argocd app get ${{ env.ARGOCD_APP_NAME }} || true
               exit 1
             fi
             
@@ -160,7 +159,7 @@ jobs:
             ELAPSED=$((ELAPSED + ${{ env.HEALTH_CHECK_INTERVAL }}))
           done
           
-          # Timeout reached
+          # Timeout reached - this is a FAILURE
           APP_JSON=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json)
           FINAL_HEALTH=$(echo "$APP_JSON" | jq -r '
             .status.resources[] | 
@@ -168,21 +167,34 @@ jobs:
             .health.status // "Unknown"
           ')
           
-          echo "::error::Timeout after ${{ env.HEALTH_CHECK_TIMEOUT }}s"
+          FINAL_MESSAGE=$(echo "$APP_JSON" | jq -r '
+            .status.resources[] | 
+            select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'") |
+            .health.message // "No message"
+          ')
+          
+          echo "::error::TIMEOUT: Deployment did not become healthy after ${{ env.HEALTH_CHECK_TIMEOUT }}s"
           echo "Final health status: $FINAL_HEALTH"
+          echo "Final message: $FINAL_MESSAGE"
           
-          argocd app get ${{ env.ARGOCD_APP_NAME }} \
-            --resource apps:Deployment:${{ env.APP_NAMESPACE }}/${{ env.APP_DEPLOYMENT }}
-          
+          # Set failure flag for rollback
           echo "deployment_failed=true" >> $GITHUB_OUTPUT
+          
+          # Show app status
+          echo ""
+          echo "=== Application Status ==="
+          argocd app get ${{ env.ARGOCD_APP_NAME }} || true
+          
           exit 1
       
       - name: Show deployment details on failure
         if: failure() && steps.health_check.outputs.deployment_failed == 'true'
         run: |
-          echo "=== Full Deployment Resource Status ==="
-          argocd app get ${{ env.ARGOCD_APP_NAME }} \
-            --resource apps:Deployment:${{ env.APP_NAMESPACE }}/${{ env.APP_DEPLOYMENT }} || true
+          echo "=== Deployment Details ==="
+          argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '
+            .status.resources[] | 
+            select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'")
+          '
           
           echo ""
           echo "=== All app-dev Resources ==="
