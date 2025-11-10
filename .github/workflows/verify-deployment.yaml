@@ -21,19 +21,22 @@ jobs:
           fetch-depth: 2  # Need previous commit for rollback
       
       - name: Setup ArgoCD CLI
-        uses: clowdhaus/argo-cd-action@v2.0.0
+        uses: clowdhaus/argo-cd-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Prevents API rate limits
         with:
-          version: latest
           command: version
           options: --client
 
       - name: Login to ArgoCD
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
-          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+          ARGOCD_USERNAME: ${{ secrets.ARGOCD_USERNAME }}
+          ARGOCD_PASSWORD: ${{ secrets.ARGOCD_PASSWORD }}
         run: |
           argocd login $ARGOCD_SERVER \
-            --auth-token $ARGOCD_AUTH_TOKEN \
+            --username $ARGOCD_USERNAME \
+            --password $ARGOCD_PASSWORD \
             --grpc-web --insecure
 
       - name: Trigger sync and wait
@@ -58,34 +61,18 @@ jobs:
           echo "Sync Status: $SYNC"
           
           if [ "$HEALTH" != "Healthy" ] || [ "$SYNC" != "Synced" ]; then
-            echo "Deployment unhealthy!"
+            echo "Deployment unhealthy"
             exit 1
           fi
           
-          echo "Deployment is healthy!"
+          echo "Deployment is healthy"
 
       - name: Rollback on failure
         if: failure() && steps.health.conclusion == 'failure'
         run: |
-          echo "🔄 Health check failed - reverting Git commit..."
+          echo "Health check failed - reverting Git commit..."
           
           git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          
-          # Get the commit that triggered this
-          BAD_COMMIT=$(git rev-parse HEAD)
-          echo "Reverting commit: $BAD_COMMIT"
-          
-          # Revert the bad commit
-          git revert HEAD --no-edit
-          git push origin main
-          
-          echo "✅ Git rollback completed - ArgoCD will auto-sync to previous version"
-
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "::error::Deployment failed health check and was rolled back!"          git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           
           # Get the commit that triggered this
@@ -101,5 +88,4 @@ jobs:
       - name: Notify on failure
         if: failure()
         run: |
-          echo "::error::Deployment failed health check and was rolled back!"
-           
+          echo "::error::Deployment failed health check and was rolled back"
