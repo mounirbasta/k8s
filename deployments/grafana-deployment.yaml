@@ -30,7 +30,9 @@ spec:
               name: grafana-secrets
               key: admin-password
         volumeMounts:
-        - name: config
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        - name: datasources
           mountPath: /etc/grafana/provisioning/datasources
           readOnly: true
         resources:
@@ -41,6 +43,10 @@ spec:
             memory: "256Mi"
             cpu: "200m"
       volumes:
-      - name: config
+      - name: grafana-storage
+        gcePersistentDisk:
+          pdName: grafana-disk
+          fsType: ext4
+      - name: datasources
         configMap:
           name: grafana-datasources
