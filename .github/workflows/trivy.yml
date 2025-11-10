@@ -8,6 +8,11 @@ on:
     branches:
       - main
 
+permissions:
+  security-events: write
+  actions: read
+  contents: read
+  
 jobs:
   trivy:
     runs-on: ubuntu-latest
