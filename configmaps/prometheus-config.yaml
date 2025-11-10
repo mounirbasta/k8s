@@ -21,3 +21,7 @@ data:
       - job_name: 'app-dev'
         static_configs:
           - targets: ['app-dev-service.app-dev:8080']
+
+      - job_name: 'kube-state-metrics'
+        static_configs:
+          - targets: ['kube-state-metrics.kube-system:8080']
