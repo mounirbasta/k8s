@@ -208,28 +208,34 @@ jobs:
       - name: Rollback on failure
         if: failure() && steps.health_check.outputs.deployment_failed == 'true'
         run: |
-          echo "ROLLBACK: Deployment health check failed - rolling back Git commit..."
+          echo "ROLLBACK: Deployment health check failed - creating revert commit..."
           
-          git config user.name "GitHub Actions Bot"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           BAD_COMMIT=$(git rev-parse HEAD)
-          echo "Rolling back commit: $BAD_COMMIT"
+          COMMIT_MSG=$(git log -1 --pretty=%B HEAD)
+          
+          echo "Reverting commit: $BAD_COMMIT"
+          echo "Original commit message: $COMMIT_MSG"
           
           # Check if merge commit
           PARENT_COUNT=$(git cat-file -p HEAD | grep "^parent" | wc -l)
           
           if [ "$PARENT_COUNT" -gt 1 ]; then
-            echo "Merge commit - reverting with mainline 1"
+            echo "Merge commit detected - reverting with mainline 1"
             git revert HEAD --no-edit -m 1
-            git push origin main
           else
-            echo "Regular commit - using reset"
-            git reset --hard HEAD~1
-            git push origin main --force-with-lease
+            echo "Regular commit - creating revert"
+            git revert HEAD --no-edit
           fi
           
-          echo "SUCCESS: Git rollback completed"
+          # Push the revert commit (this will trigger the pipeline again)
+          git push origin main
+          
+          REVERT_COMMIT=$(git rev-parse HEAD)
+          echo "SUCCESS: Revert commit created: $REVERT_COMMIT"
+          echo "Pipeline will run again to verify the rollback"
           echo "ArgoCD auto-sync will deploy the previous version"
       
       - name: Notify on success
