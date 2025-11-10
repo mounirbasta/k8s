@@ -10,10 +10,11 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 
 ### Core Infrastructure
 - **Kubernetes Cluster**: Provisioned via Terraform (GCP GKE)
+- **Python App**: Python application containing info about users and products
 - **NGINX Ingress Controller**: Installed and configured for traffic routing
 - **ArgoCD**: GitOps tool for continuous deployment and synchronization
 - **Monitoring Stack**: Comprehensive observability suite
-- **Python App**: Python application containing info about users and products
+- **Cert-Manager**: Automated TLS certificate management
 
 ### Monitoring & Observability Stack
 - **Grafana with Custom Dashboards**:
@@ -27,11 +28,11 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 
 ## 🔗 Access URLs
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| ArgoCD | http://wwwargo.com | GitOps deployment management |
-| Dashboard | http://136.119.151.203/dashboards | Grafana monitoring dashboards |
-| Python Application | https://py7hon.com/ | Deployed application endpoint |
+| Service | URL | Purpose | SSL Status |
+|---------|-----|---------|------------|
+| ArgoCD | http://wwwargo.com | GitOps deployment management | HTTP |
+| Dashboard | http://136.119.151.203/dashboards | Grafana monitoring dashboards | HTTP |
+| Python Application | https://py7hon.com/ | Deployed application endpoint | **TLS (Let's Encrypt)** |
 
 ## 📁 Repository Structure
 
@@ -41,6 +42,10 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 ├── argocd
 │   ├── README
 │   └── app-dev-application.yaml
+├── cert-manager
+│   ├── cluster-issuer-prod.yaml
+│   ├── cluster-issuer-staging.yaml
+│   └── cert-manager-install.yaml
 ├── configmaps
 │   ├── alloy-config.yaml
 │   ├── app-config.yaml
@@ -63,6 +68,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 │   └── grafana-dev.yaml
 ├── namespaces
 │   ├── app-namespace.yaml
+│   ├── cert-manager-namespace.yaml
 │   ├── kube-state-metrics-namespace.yaml
 │   └── monitoring-namespace.yaml
 ├── rbac
@@ -79,7 +85,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
     ├── loki-service.yaml
     └── prometheus-service.yaml
 
-10 directories, 33 files
+11 directories, 36 files
 ```
 
 ## 🚀 Getting Started
@@ -121,7 +127,32 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
    ```
 
-3. **Deploy kube-state-metrics**:
+3. **Install Cert-Manager**:
+   ```bash
+   # Install cert-manager CRDs
+   kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.crds.yaml
+
+   # Add cert-manager Helm repository
+   helm repo add jetstack https://charts.jetstack.io
+   helm repo update
+
+   # Install cert-manager
+   helm install cert-manager jetstack/cert-manager \
+     --namespace cert-manager \
+     --create-namespace \
+     --version v1.13.0
+
+   # Verify installation
+   kubectl get pods -n cert-manager
+   ```
+
+4. **Configure Let's Encrypt Cluster Issuer**:
+   ```bash
+   # Apply production cluster issuer
+   kubectl apply -f cert-manager/cluster-issuer-prod.yaml
+   ```
+
+5. **Deploy kube-state-metrics**:
    ```bash
    # Deploy kube-state-metrics for Kubernetes cluster metrics
    kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/master/examples/standard/service-account.yaml
@@ -131,7 +162,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
    kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/master/examples/standard/service.yaml
    ```
 
-4. **Deploy Monitoring Stack**:
+6. **Deploy Monitoring Stack**:
    ```bash
    kubectl apply -f configmaps/
    kubectl apply -f secrets/
@@ -142,7 +173,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
    kubectl apply -f ingresses/
    ```
 
-5. **Bootstrap ArgoCD**:
+7. **Bootstrap ArgoCD**:
    ```bash
    kubectl create namespace argocd
    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
@@ -151,10 +182,97 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
    kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
    ```
 
-6. **Deploy ArgoCD Application**:
+8. **Deploy ArgoCD Application**:
    ```bash
    kubectl apply -f argocd/app-dev-application.yaml
    ```
+
+## 🔐 SSL/TLS Configuration
+
+### Cert-Manager Setup
+
+The cluster uses **cert-manager** for automated TLS certificate management with Let's Encrypt:
+
+#### Installation Method Used:
+```bash
+# This is the method used in the current environment:
+kubectl create namespace cert-manager
+
+# Install using the official manifest (method used based on your replicaset names)
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+```
+
+#### Cluster Issuer Configuration:
+Create `cert-manager/cluster-issuer-prod.yaml`:
+```yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: your-email@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+```
+
+### Application Ingress with TLS
+
+The Python application ingress is configured with TLS using cert-manager:
+
+#### app-dev.yaml:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-server-ingress
+  namespace: app-dev
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - py7hon.com
+    secretName: app-tls-secret
+  rules:
+  - host: py7hon.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app
+            port:
+              number: 443
+```
+
+> **⚠️ SSL Note**: The application currently shows a fake/self-signed certificate because this is a development environment. In production, ensure:
+> - Domain `py7hon.com` points to your cluster IP
+> - Let's Encrypt can reach your domain for HTTP-01 challenges
+> - Firewall rules allow HTTP traffic on port 80 for ACME challenges
+
+### Verifying Certificate Status
+
+```bash
+# Check certificate status
+kubectl get certificates -A
+
+# Check certificate requests
+kubectl get certificaterequests -A
+
+# Check cluster issuers
+kubectl get clusterissuer
+
+# Check order status (Let's Encrypt)
+kubectl get orders -A
+```
 
 ## 🎯 Application Information
 
@@ -162,6 +280,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 - **Source Repository**: https://github.com/mounirbasta/task
 - **Production URL**: https://py7hon.com/
 - **Deployment Method**: GitOps via ArgoCD
+- **SSL**: TLS-enabled via Let's Encrypt (development mode with fake cert)
 
 ## 🔄 GitOps Workflow
 
@@ -245,11 +364,13 @@ Pre-configured dashboards include:
 - **Logs / App Dashboard**: Application logs, performance metrics, error rates
 - **Node Exporter Full**: CPU, memory, disk, network metrics per node
 - **Cluster State Dashboard**: Kubernetes object states and health from kube-state-metrics
+- **SSL/TLS Dashboard**: Certificate expiration and SSL status monitoring
 
 ### Data Flow
 ```
 Applications → Alloy (DaemonSet) → Prometheus (Metrics) + Loki (Logs) → Grafana (Dashboards)
 Kubernetes API → kube-state-metrics → Prometheus → Grafana (Cluster State)
+Cert-Manager → Let's Encrypt → TLS Certificates → Secure Ingress
 ```
 
 ## 🔒 Security
@@ -268,6 +389,12 @@ kubectl port-forward svc/argocd-server -n argocd 8080:443
 # Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 ```
 
+### TLS & Certificate Security
+- **Cert-Manager**: Automated TLS certificate management
+- **Let's Encrypt**: Free SSL certificates for development
+- **Production Readiness**: Currently using fake certificates for development
+- **Certificate Rotation**: Automatic renewal handled by cert-manager
+
 ### Vulnerability Management
 - **Trivy Scanning**: Integrated in CI pipeline
 - **Image Security**: Regular vulnerability scans
@@ -275,10 +402,39 @@ kubectl port-forward svc/argocd-server -n argocd 8080:443
 
 ## 🛠️ Application Management
 
-### Adding New Applications
+### Adding New Applications with TLS
 1. Create Application Manifests in appropriate directories
-2. Update ArgoCD Application configuration
-3. Configure CI/CD in application repository to update this GitOps repo
+2. Add cert-manager annotations to ingress for automatic TLS
+3. Update ArgoCD Application configuration
+4. Configure CI/CD in application repository to update this GitOps repo
+
+### Example TLS-enabled Ingress
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app-ingress
+  namespace: app-dev
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - myapp.example.com
+    secretName: myapp-tls-secret
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80
+```
 
 ### Health Monitoring Pipeline
 The paste1 health check pipeline:
@@ -310,6 +466,11 @@ kubectl logs -l app=alloy -n monitoring
 kubectl get pods -n kube-system -l app.kubernetes.io/name=kube-state-metrics
 kubectl logs -n kube-system -l app.kubernetes.io/name=kube-state-metrics
 
+# Check cert-manager
+kubectl get pods -n cert-manager
+kubectl get certificates -A
+kubectl get certificaterequests -A
+
 # Verify deployments
 kubectl get deployments -n app-dev
 kubectl get deployments -n monitoring
@@ -319,6 +480,25 @@ kubectl get deployments -n monitoring
 
 ```bash
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+```
+
+### Cert-Manager Troubleshooting
+
+```bash
+# Check cert-manager status
+kubectl get pods -n cert-manager
+
+# Check certificate status
+kubectl get certificates -A
+
+# Check challenges (ACME)
+kubectl get challenges -A
+
+# View certificate events
+kubectl describe certificate app-tls-secret -n app-dev
+
+# Check cluster issuer
+kubectl describe clusterissuer letsencrypt-prod
 ```
 
 ### Webhook Troubleshooting
@@ -337,6 +517,22 @@ kubectl port-forward -n kube-system svc/kube-state-metrics 8080:8080
 curl http://localhost:8080/metrics
 ```
 
+### SSL Certificate Issues
+```bash
+# If certificates aren't issuing:
+# 1. Check domain resolution
+nslookup py7hon.com
+
+# 2. Check ingress controller logs
+kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller
+
+# 3. Check cert-manager logs
+kubectl logs -n cert-manager -l app.kubernetes.io/instance=cert-manager
+
+# 4. Verify cluster issuer
+kubectl describe clusterissuer letsencrypt-prod
+```
+
 ## 📝 Notes
 
 - **GitOps Principle**: This repository is the single source of truth for cluster state
@@ -345,3 +541,5 @@ curl http://localhost:8080/metrics
 - **Monitoring**: Alloy-based collection with pre-configured Grafana dashboards enhanced by kube-state-metrics
 - **Security**: Integrated Trivy scanning and GCP authentication
 - **Cluster Metrics**: kube-state-metrics provides detailed Kubernetes object state information for comprehensive monitoring
+- **TLS/SSL**: Cert-manager with Let's Encrypt for automated certificate management (currently using fake certificates in development)
+- **Certificate Note**: The development environment shows fake certificates. For production, ensure proper domain configuration and ACME challenge accessibility
