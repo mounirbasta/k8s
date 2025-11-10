@@ -20,17 +20,20 @@ jobs:
         with:
           fetch-depth: 2  # Need previous commit for rollback
       
-      - name: Install ArgoCD CLI
-        run: |
-          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-          sudo install -m 555 argocd /usr/local/bin/argocd
-          rm argocd
+      - name: Setup ArgoCD CLI
+        uses: clowdhaus/argo-cd-action@v2.0.0
+        with:
+          version: latest
+          command: version
+          options: --client
 
       - name: Login to ArgoCD
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
-          argocd login ${{ secrets.ARGOCD_SERVER }} \
-            --username ${{ secrets.ARGOCD_USERNAME }} \
-            --password ${{ secrets.ARGOCD_PASSWORD }} \
+          argocd login $ARGOCD_SERVER \
+            --auth-token $ARGOCD_AUTH_TOKEN \
             --grpc-web --insecure
 
       - name: Trigger sync and wait
@@ -67,6 +70,22 @@ jobs:
           echo "🔄 Health check failed - reverting Git commit..."
           
           git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # Get the commit that triggered this
+          BAD_COMMIT=$(git rev-parse HEAD)
+          echo "Reverting commit: $BAD_COMMIT"
+          
+          # Revert the bad commit
+          git revert HEAD --no-edit
+          git push origin main
+          
+          echo "✅ Git rollback completed - ArgoCD will auto-sync to previous version"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deployment failed health check and was rolled back!"          git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           
           # Get the commit that triggered this
