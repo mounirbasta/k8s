@@ -8,6 +8,8 @@ on:
 
 env:
   ARGOCD_APP_NAME: app-dev
+  HEALTH_CHECK_TIMEOUT: 300  # 5 minutes in seconds
+  HEALTH_CHECK_INTERVAL: 15   # Check every 15 seconds
 
 jobs:
   verify-and-rollback:
@@ -26,7 +28,7 @@ jobs:
         with:
           command: version
           options: --client
-
+      
       - name: Login to ArgoCD
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
@@ -37,57 +39,105 @@ jobs:
             --username $ARGOCD_USERNAME \
             --password $ARGOCD_PASSWORD \
             --grpc-web --insecure
-
+      
       - name: Trigger sync
         run: |
           echo "Triggering ArgoCD sync..."
           argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune
-
+      
       - name: Wait and check health
-        id: health
+        id: health_check
         run: |
-          echo "Waiting 4 minutes for deployment..."
-          sleep 240
+          echo "Monitoring deployment health for up to ${{ env.HEALTH_CHECK_TIMEOUT }} seconds..."
           
-          HEALTH=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.health.status')
+          ELAPSED=0
+          while [ $ELAPSED -lt ${{ env.HEALTH_CHECK_TIMEOUT }} ]; do
+            # Get app status
+            APP_JSON=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json)
+            
+            HEALTH=$(echo "$APP_JSON" | jq -r '.status.health.status')
+            SYNC=$(echo "$APP_JSON" | jq -r '.status.sync.status')
+            
+            echo "[$ELAPSED s] Health: $HEALTH | Sync: $SYNC"
+            
+            # Check for failure conditions
+            if [ "$HEALTH" = "Degraded" ]; then
+              echo "::error::Deployment health is Degraded"
+              argocd app get ${{ env.ARGOCD_APP_NAME }}
+              echo "deployment_failed=true" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            
+            if [ "$HEALTH" = "Missing" ]; then
+              echo "::error::Deployment resources are Missing"
+              argocd app get ${{ env.ARGOCD_APP_NAME }}
+              echo "deployment_failed=true" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            
+            # Check for success
+            if [ "$HEALTH" = "Healthy" ] && [ "$SYNC" = "Synced" ]; then
+              echo "Deployment successful!"
+              echo "deployment_failed=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+            ELAPSED=$((ELAPSED + ${{ env.HEALTH_CHECK_INTERVAL }}))
+          done
           
-          echo "Health Status: $HEALTH"
-          
-          if [ "$HEALTH" = "Degraded" ] || [ "$HEALTH" = "Missing" ]; then
-            echo "Deployment failed"
-            argocd app get ${{ env.ARGOCD_APP_NAME }}
-            exit 1
-          fi
-          
-          echo "Deployment completed"
-
-      - name: Rollback on failure
-        if: failure()
+          echo "::error::Health check timeout after ${{ env.HEALTH_CHECK_TIMEOUT }} seconds"
+          argocd app get ${{ env.ARGOCD_APP_NAME }}
+          echo "deployment_failed=true" >> $GITHUB_OUTPUT
+          exit 1
+      
+      - name: Get deployment details on failure
+        if: failure() && steps.health_check.outputs.deployment_failed == 'true'
         run: |
-          echo "Rolling back..."
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git revert HEAD --no-edit
-          git push origin main
+          echo "=== Application Status ==="
+          argocd app get ${{ env.ARGOCD_APP_NAME }}
+          
+          echo ""
+          echo "=== Recent Events ==="
+          argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.conditions[]? | "[\(.type)] \(.message)"'
+          
+          echo ""
+          echo "=== Resource Health ==="
+          argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.resources[]? | "\(.kind)/\(.name): \(.health.status // "Unknown")"'
+      
       - name: Rollback on failure
-        if: failure() && steps.health.conclusion == 'failure'
+        if: failure() && steps.health_check.outputs.deployment_failed == 'true'
         run: |
           echo "Health check failed - reverting Git commit..."
           
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Get the commit that triggered this
+          # Get the commit that triggered this workflow
           BAD_COMMIT=$(git rev-parse HEAD)
           echo "Reverting commit: $BAD_COMMIT"
           
-          # Revert the bad commit
-          git revert HEAD --no-edit
+          # Create revert commit
+          git revert HEAD --no-edit -m "Automatic rollback: deployment health check failed"
+          
+          # Push the revert
           git push origin main
           
           echo "Git rollback completed - ArgoCD will auto-sync to previous version"
-
+          
+          # Optionally trigger immediate sync to speed up rollback
+          argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune
+      
       - name: Notify on failure
         if: failure()
         run: |
-          echo "::error::Deployment failed health check and was rolled back"
+          if [ "${{ steps.health_check.outputs.deployment_failed }}" = "true" ]; then
+            echo "::error::Deployment failed health check and was automatically rolled back"
+          else
+            echo "::error::Workflow failed during setup or verification"
+          fi
+      
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "::notice::✅ Deployment verified successfully - application is healthy"
