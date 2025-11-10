@@ -22,6 +22,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 - **Alloy**: Metrics and logs collection agent
 - **Prometheus**: Metrics storage and alerting
 - **Loki**: Log aggregation system
+- **Kube-state-metrics**: Kubernetes cluster metrics exporter
 
 ## 🔗 Access URLs
 
@@ -51,6 +52,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 ├── deployments
 │   ├── app-deployment.yaml
 │   ├── grafana-deployment.yaml
+│   ├── kube-state-metrics-deployment.yaml
 │   ├── loki-deployment.yaml
 │   └── prometheus-deployment.yaml
 ├── ingresses
@@ -60,9 +62,11 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 │   └── grafana-dev.yaml
 ├── namespaces
 │   ├── app-namespace.yaml
+│   ├── kube-state-metrics-namespace.yaml
 │   └── monitoring-namespace.yaml
 ├── rbac
-│   └── alloy-rbac.yaml
+│   ├── alloy-rbac.yaml
+│   └── kube-state-metrics-rbac.yaml
 ├── secrets
 │   ├── app-secrets.yaml
 │   └── grafana-secrets.yaml
@@ -70,10 +74,11 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
     ├── alloy-service.yaml
     ├── app-service.yaml
     ├── grafana-service.yaml
+    ├── kube-state-metrics-service.yaml
     ├── loki-service.yaml
     └── prometheus-service.yaml
 
-10 directories, 28 files
+10 directories, 33 files
 ```
 
 ## 🚀 Getting Started
@@ -115,7 +120,17 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
    ```
 
-3. **Deploy Monitoring Stack**:
+3. **Deploy kube-state-metrics**:
+   ```bash
+   # Deploy kube-state-metrics for Kubernetes cluster metrics
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/master/examples/standard/service-account.yaml
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/master/examples/standard/cluster-role.yaml
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/master/examples/standard/cluster-role-binding.yaml
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/master/examples/standard/deployment.yaml
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/kube-state-metrics/master/examples/standard/service.yaml
+   ```
+
+4. **Deploy Monitoring Stack**:
    ```bash
    kubectl apply -f configmaps/
    kubectl apply -f secrets/
@@ -126,7 +141,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
    kubectl apply -f ingresses/
    ```
 
-4. **Bootstrap ArgoCD**:
+5. **Bootstrap ArgoCD**:
    ```bash
    kubectl create namespace argocd
    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
@@ -135,7 +150,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
    kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
    ```
 
-5. **Deploy ArgoCD Application**:
+6. **Deploy ArgoCD Application**:
    ```bash
    kubectl apply -f argocd/app-dev-application.yaml
    ```
@@ -209,21 +224,31 @@ curl -X PUT \
 
 ## 📊 Monitoring Architecture
 
+### Kube-state-metrics
+Kube-state-metrics is a service that listens to the Kubernetes API server and generates metrics about the state of various objects:
+- **Deployments**: Replica counts, status, and updates
+- **Nodes**: Capacity, allocatable resources, and conditions
+- **Pods**: Status, resource requests, and limits
+- **Services**: Cluster IPs, ports, and selectors
+- **PersistentVolumes**: Capacity, access modes, and status
+
 ### Alloy Configuration
 Alloy is deployed as a DaemonSet to collect:
-- **Metrics**: Scraped from Prometheus endpoints
+- **Metrics**: Scraped from Prometheus endpoints including kube-state-metrics
 - **Logs**: Collected from all pods and nodes
 - **Transport**: Forwarded to Loki and Prometheus
 
 ### Grafana Dashboards
 Pre-configured dashboards include:
-- **K8S Dashboard**: Cluster resource usage, pod status, node metrics
+- **K8S Dashboard**: Kubernetes cluster resource usage, pod status, node metrics with kube-state-metrics data
 - **Logs / App Dashboard**: Application logs, performance metrics, error rates
 - **Node Exporter Full**: CPU, memory, disk, network metrics per node
+- **Cluster State Dashboard**: Kubernetes object states and health from kube-state-metrics
 
 ### Data Flow
 ```
 Applications → Alloy (DaemonSet) → Prometheus (Metrics) + Loki (Logs) → Grafana (Dashboards)
+Kubernetes API → kube-state-metrics → Prometheus → Grafana (Cluster State)
 ```
 
 ## 🔒 Security
@@ -280,6 +305,10 @@ kubectl port-forward -n monitoring svc/grafana 3000:3000
 # Check Alloy logs
 kubectl logs -l app=alloy -n monitoring
 
+# Check kube-state-metrics
+kubectl get pods -n kube-system -l app.kubernetes.io/name=kube-state-metrics
+kubectl logs -n kube-system -l app.kubernetes.io/name=kube-state-metrics
+
 # Verify deployments
 kubectl get deployments -n app-dev
 kubectl get deployments -n monitoring
@@ -297,10 +326,21 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 - Ensure ArgoCD ingress is properly configured
 - Verify webhook secret matches ArgoCD configuration
 
+### Kube-state-metrics Verification
+```bash
+# Verify kube-state-metrics is running
+kubectl get pods -n kube-system | grep kube-state-metrics
+
+# Check metrics endpoint
+kubectl port-forward -n kube-system svc/kube-state-metrics 8080:8080
+curl http://localhost:8080/metrics
+```
+
 ## 📝 Notes
 
 - **GitOps Principle**: This repository is the single source of truth for cluster state
 - **Automated Rollbacks**: Health check failures trigger automatic reversion to working commits
 - **Manual Webhook**: Webhook configured manually via GitHub UI for ArgoCD push-based sync
-- **Monitoring**: Alloy-based collection with pre-configured Grafana dashboards
+- **Monitoring**: Alloy-based collection with pre-configured Grafana dashboards enhanced by kube-state-metrics
 - **Security**: Integrated Trivy scanning and GCP authentication
+- **Cluster Metrics**: kube-state-metrics provides detailed Kubernetes object state information for comprehensive monitoring
