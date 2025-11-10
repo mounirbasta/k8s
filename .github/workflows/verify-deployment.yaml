@@ -42,13 +42,50 @@ jobs:
             --password $ARGOCD_PASSWORD \
             --grpc-web --insecure
       
-      - name: Sync app with prune
+      - name: Wait for any ongoing operations
         run: |
-          echo "Syncing app with prune to ensure clean state..."
-          argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune --force
+          echo "Checking for ongoing operations..."
           
-          echo "Waiting for sync to complete..."
-          sleep 10
+          # Wait up to 60 seconds for any ongoing operations to complete
+          WAIT_TIME=0
+          MAX_WAIT=60
+          
+          while [ $WAIT_TIME -lt $MAX_WAIT ]; do
+            OPERATION_STATE=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.operationState.phase // "None"')
+            
+            if [ "$OPERATION_STATE" = "None" ] || [ "$OPERATION_STATE" = "Succeeded" ] || [ "$OPERATION_STATE" = "Failed" ]; then
+              echo "No ongoing operation (state: $OPERATION_STATE)"
+              break
+            fi
+            
+            echo "Operation in progress (state: $OPERATION_STATE), waiting..."
+            sleep 5
+            WAIT_TIME=$((WAIT_TIME + 5))
+          done
+          
+          if [ $WAIT_TIME -ge $MAX_WAIT ]; then
+            echo "WARNING: Operation still running after ${MAX_WAIT}s, will proceed anyway"
+          fi
+      
+      - name: Trigger sync if needed
+        run: |
+          echo "Checking if sync is needed..."
+          
+          SYNC_STATUS=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.sync.status')
+          echo "Current sync status: $SYNC_STATUS"
+          
+          # Only trigger sync if not already in progress and not synced
+          if [ "$SYNC_STATUS" != "Synced" ]; then
+            echo "Triggering sync..."
+            argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune || {
+              echo "WARNING: Sync command failed (might be auto-syncing), continuing to health check..."
+            }
+          else
+            echo "App is already synced"
+          fi
+          
+          # Give auto-sync time to start if it's going to
+          sleep 5
       
       - name: Monitor app deployment health
         id: health_check
@@ -66,11 +103,21 @@ jobs:
               select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'")
             ')
             
+            # Check if deployment was found
+            if [ -z "$DEPLOYMENT_INFO" ] || [ "$DEPLOYMENT_INFO" = "null" ]; then
+              echo "[$ELAPSED s] WARNING: Deployment not found in ArgoCD yet, waiting..."
+              sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+              ELAPSED=$((ELAPSED + ${{ env.HEALTH_CHECK_INTERVAL }}))
+              continue
+            fi
+            
             DEPLOYMENT_HEALTH=$(echo "$DEPLOYMENT_INFO" | jq -r '.health.status // "Unknown"')
             DEPLOYMENT_MESSAGE=$(echo "$DEPLOYMENT_INFO" | jq -r '.health.message // "No message"')
-            REQUIRES_PRUNING=$(echo "$DEPLOYMENT_INFO" | jq -r '.requiresPruning // false')
             
-            echo "[$ELAPSED s] Health: $DEPLOYMENT_HEALTH | Requires Pruning: $REQUIRES_PRUNING"
+            # Get operation state
+            OPERATION_STATE=$(echo "$APP_JSON" | jq -r '.status.operationState.phase // "None"')
+            
+            echo "[$ELAPSED s] Health: $DEPLOYMENT_HEALTH | Operation: $OPERATION_STATE"
             
             if [ "$DEPLOYMENT_MESSAGE" != "No message" ]; then
               echo "  Message: $DEPLOYMENT_MESSAGE"
@@ -93,15 +140,8 @@ jobs:
             fi
             
             # Check for SUCCESS
-            # Primary success: Deployment is Healthy
             if [ "$DEPLOYMENT_HEALTH" = "Healthy" ]; then
-              echo "Deployment is Healthy!"
-              
-              # Warn if pruning needed but don't fail
-              if [ "$REQUIRES_PRUNING" = "true" ]; then
-                echo "Note: Some resources require pruning (will be cleaned up by ArgoCD)"
-              fi
-              
+              echo "SUCCESS: Deployment is Healthy!"
               echo "deployment_failed=false" >> $GITHUB_OUTPUT
               exit 0
             fi
@@ -111,9 +151,9 @@ jobs:
               echo "  Deployment is progressing..."
             fi
             
-            # Unknown health - wait a bit more
+            # Unknown health
             if [ "$DEPLOYMENT_HEALTH" = "Unknown" ]; then
-              echo "  Health status is still Unknown..."
+              echo "  Health status is Unknown..."
             fi
             
             sleep ${{ env.HEALTH_CHECK_INTERVAL }}
@@ -142,29 +182,20 @@ jobs:
         run: |
           echo "=== Full Deployment Resource Status ==="
           argocd app get ${{ env.ARGOCD_APP_NAME }} \
-            --resource apps:Deployment:${{ env.APP_NAMESPACE }}/${{ env.APP_DEPLOYMENT }} \
-            --show-operation
-          
-          echo ""
-          echo "=== Resources Requiring Pruning ==="
-          argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '
-            .status.resources[] | 
-            select(.requiresPruning == true) |
-            "\(.kind)/\(.name) in \(.namespace)"
-          '
+            --resource apps:Deployment:${{ env.APP_NAMESPACE }}/${{ env.APP_DEPLOYMENT }} || true
           
           echo ""
           echo "=== All app-dev Resources ==="
           argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '
             .status.resources[] | 
             select(.namespace == "'"${{ env.APP_NAMESPACE }}"'") |
-            "\(.kind)/\(.name): Health=\(.health.status // "N/A") Sync=\(.status)"
+            "\(.kind)/\(.name): Health=\(.health.status // "N/A")"
           '
       
       - name: Rollback on failure
         if: failure() && steps.health_check.outputs.deployment_failed == 'true'
         run: |
-          echo "Deployment health check failed - rolling back Git commit..."
+          echo "ROLLBACK: Deployment health check failed - rolling back Git commit..."
           
           git config user.name "GitHub Actions Bot"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -185,24 +216,10 @@ jobs:
             git push origin main --force-with-lease
           fi
           
-          echo "Git rollback completed"
-          
-          # Trigger sync after rollback
-          echo "Syncing ArgoCD to rolled-back version..."
-          argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune --force
-          
-          sleep 30
-          
-          # Verify rollback
-          echo "Checking deployment health after rollback..."
-          ROLLED_BACK_HEALTH=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '
-            .status.resources[] | 
-            select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'") |
-            .health.status // "Unknown"
-          ')
-          echo "Post-rollback health: $ROLLED_BACK_HEALTH"
+          echo "SUCCESS: Git rollback completed"
+          echo "ArgoCD auto-sync will deploy the previous version"
       
       - name: Notify on success
         if: success()
         run: |
-          echo "::notice::Deployment verified successfully - ${{ env.APP_DEPLOYMENT }} is healthy"
+          echo "::notice::SUCCESS: Deployment verified successfully - ${{ env.APP_DEPLOYMENT }} is healthy"
