@@ -30,7 +30,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 
 | Service | URL | Purpose | SSL Status |
 |---------|-----|---------|------------|
-| ArgoCD | http://wwwargo.com | GitOps deployment management | HTTP |
+| ArgoCD | https://wwwargo.com | GitOps deployment management | **TLS (Let's Encrypt)** |
 | Dashboard | http://136.119.151.203/dashboards | Grafana monitoring dashboards | HTTP |
 | Python Application | https://py7hon.com/ | Deployed application endpoint | **TLS (Let's Encrypt)** |
 
