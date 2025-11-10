@@ -108,24 +108,36 @@ jobs:
       - name: Rollback on failure
         if: failure() && steps.health_check.outputs.deployment_failed == 'true'
         run: |
-          echo "Health check failed - reverting Git commit..."
+          echo "🔄 Health check failed - reverting Git commit..."
           
           git config user.name "GitHub Actions Bot"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           # Get the commit that triggered this workflow
           BAD_COMMIT=$(git rev-parse HEAD)
-          echo "Reverting commit: $BAD_COMMIT"
+          COMMIT_MSG=$(git log -1 --pretty=%B HEAD)
           
-          # Create revert commit
-          git revert HEAD --no-edit -m "Automatic rollback: deployment health check failed"
+          echo "Reverting commit: $BAD_COMMIT"
+          echo "Commit message: $COMMIT_MSG"
+          
+          # Check if this is a merge commit
+          PARENT_COUNT=$(git cat-file -p HEAD | grep "^parent" | wc -l)
+          
+          if [ "$PARENT_COUNT" -gt 1 ]; then
+            echo "This is a merge commit with $PARENT_COUNT parents"
+            echo "Reverting merge commit (keeping first parent)..."
+            git revert HEAD --no-edit -m 1
+          else
+            echo "This is a regular commit"
+            git revert HEAD --no-edit
+          fi
           
           # Push the revert
           git push origin main
           
           echo "Git rollback completed - ArgoCD will auto-sync to previous version"
           
-          # Optionally trigger immediate sync to speed up rollback
+          # Trigger immediate sync to speed up rollback
           argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune
       
       - name: Notify on failure
