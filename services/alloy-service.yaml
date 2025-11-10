@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: alloy-service
+  namespace: monitoring
+spec:
+  selector:
+    app: alloy
+  ports:
+  - name: metrics
+    port: 12345
+    targetPort: 12345
+    nodePort: 31234
+  type: NodePort
