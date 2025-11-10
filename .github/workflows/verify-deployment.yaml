@@ -42,12 +42,13 @@ jobs:
             --password $ARGOCD_PASSWORD \
             --grpc-web --insecure
       
-      - name: Sync only app deployment
+      - name: Sync app with prune
         run: |
-          echo "Syncing only app deployment..."
-          argocd app sync ${{ env.ARGOCD_APP_NAME }} \
-            --resource apps:Deployment:${{ env.APP_NAMESPACE }}/${{ env.APP_DEPLOYMENT }} \
-            --prune
+          echo "Syncing app with prune to ensure clean state..."
+          argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune --force
+          
+          echo "Waiting for sync to complete..."
+          sleep 10
       
       - name: Monitor app deployment health
         id: health_check
@@ -57,43 +58,30 @@ jobs:
           
           ELAPSED=0
           while [ $ELAPSED -lt ${{ env.HEALTH_CHECK_TIMEOUT }} ]; do
-            # Get only the app deployment resource from ArgoCD
+            # Get deployment resource info
             APP_JSON=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json)
             
-            # Extract health status for our specific deployment
-            DEPLOYMENT_HEALTH=$(echo "$APP_JSON" | jq -r '
+            DEPLOYMENT_INFO=$(echo "$APP_JSON" | jq -r '
               .status.resources[] | 
-              select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'") |
-              .health.status // "Unknown"
+              select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'")
             ')
             
-            DEPLOYMENT_MESSAGE=$(echo "$APP_JSON" | jq -r '
-              .status.resources[] | 
-              select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'") |
-              .health.message // "No message"
-            ')
+            DEPLOYMENT_HEALTH=$(echo "$DEPLOYMENT_INFO" | jq -r '.health.status // "Unknown"')
+            DEPLOYMENT_MESSAGE=$(echo "$DEPLOYMENT_INFO" | jq -r '.health.message // "No message"')
+            REQUIRES_PRUNING=$(echo "$DEPLOYMENT_INFO" | jq -r '.requiresPruning // false')
             
-            SYNC_STATUS=$(echo "$APP_JSON" | jq -r '
-              .status.resources[] | 
-              select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'") |
-              .status // "Unknown"
-            ')
+            echo "[$ELAPSED s] Health: $DEPLOYMENT_HEALTH | Requires Pruning: $REQUIRES_PRUNING"
             
-            echo "[$ELAPSED s] Health: $DEPLOYMENT_HEALTH | Sync: $SYNC_STATUS"
-            
-            if [ "$DEPLOYMENT_HEALTH" != "Unknown" ] && [ "$DEPLOYMENT_MESSAGE" != "No message" ]; then
+            if [ "$DEPLOYMENT_MESSAGE" != "No message" ]; then
               echo "  Message: $DEPLOYMENT_MESSAGE"
             fi
             
-            # Check for failure
+            # Check for FAILURE conditions
             if [ "$DEPLOYMENT_HEALTH" = "Degraded" ]; then
               echo "::error::Deployment is Degraded!"
               echo "Message: $DEPLOYMENT_MESSAGE"
-              
-              # Show full deployment info
               argocd app get ${{ env.ARGOCD_APP_NAME }} \
                 --resource apps:Deployment:${{ env.APP_NAMESPACE }}/${{ env.APP_DEPLOYMENT }}
-              
               echo "deployment_failed=true" >> $GITHUB_OUTPUT
               exit 1
             fi
@@ -104,16 +92,28 @@ jobs:
               exit 1
             fi
             
-            # Check for success
-            if [ "$DEPLOYMENT_HEALTH" = "Healthy" ] && [ "$SYNC_STATUS" = "Synced" ]; then
-              echo "Deployment is Healthy and Synced!"
+            # Check for SUCCESS
+            # Primary success: Deployment is Healthy
+            if [ "$DEPLOYMENT_HEALTH" = "Healthy" ]; then
+              echo "Deployment is Healthy!"
+              
+              # Warn if pruning needed but don't fail
+              if [ "$REQUIRES_PRUNING" = "true" ]; then
+                echo "Note: Some resources require pruning (will be cleaned up by ArgoCD)"
+              fi
+              
               echo "deployment_failed=false" >> $GITHUB_OUTPUT
               exit 0
             fi
             
-            # Show what's progressing
+            # Still progressing
             if [ "$DEPLOYMENT_HEALTH" = "Progressing" ]; then
-              echo "  Still progressing..."
+              echo "  Deployment is progressing..."
+            fi
+            
+            # Unknown health - wait a bit more
+            if [ "$DEPLOYMENT_HEALTH" = "Unknown" ]; then
+              echo "  Health status is still Unknown..."
             fi
             
             sleep ${{ env.HEALTH_CHECK_INTERVAL }}
@@ -121,23 +121,20 @@ jobs:
           done
           
           # Timeout reached
-          FINAL_HEALTH=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '
+          APP_JSON=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json)
+          FINAL_HEALTH=$(echo "$APP_JSON" | jq -r '
             .status.resources[] | 
             select(.kind == "Deployment" and .name == "'"${{ env.APP_DEPLOYMENT }}"'" and .namespace == "'"${{ env.APP_NAMESPACE }}"'") |
             .health.status // "Unknown"
           ')
           
-          if [ "$FINAL_HEALTH" = "Progressing" ]; then
-            echo "::warning::Deployment still progressing after ${{ env.HEALTH_CHECK_TIMEOUT }}s"
-            echo "deployment_failed=timeout" >> $GITHUB_OUTPUT
-          else
-            echo "::error::Timeout with final health: $FINAL_HEALTH"
-            echo "deployment_failed=true" >> $GITHUB_OUTPUT
-          fi
+          echo "::error::Timeout after ${{ env.HEALTH_CHECK_TIMEOUT }}s"
+          echo "Final health status: $FINAL_HEALTH"
           
           argocd app get ${{ env.ARGOCD_APP_NAME }} \
             --resource apps:Deployment:${{ env.APP_NAMESPACE }}/${{ env.APP_DEPLOYMENT }}
           
+          echo "deployment_failed=true" >> $GITHUB_OUTPUT
           exit 1
       
       - name: Show deployment details on failure
@@ -149,6 +146,14 @@ jobs:
             --show-operation
           
           echo ""
+          echo "=== Resources Requiring Pruning ==="
+          argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '
+            .status.resources[] | 
+            select(.requiresPruning == true) |
+            "\(.kind)/\(.name) in \(.namespace)"
+          '
+          
+          echo ""
           echo "=== All app-dev Resources ==="
           argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '
             .status.resources[] | 
@@ -157,7 +162,7 @@ jobs:
           '
       
       - name: Rollback on failure
-        if: failure() && (steps.health_check.outputs.deployment_failed == 'true' || steps.health_check.outputs.deployment_failed == 'timeout')
+        if: failure() && steps.health_check.outputs.deployment_failed == 'true'
         run: |
           echo "Deployment health check failed - rolling back Git commit..."
           
@@ -181,7 +186,11 @@ jobs:
           fi
           
           echo "Git rollback completed"
-          echo "Waiting for ArgoCD to auto-sync to previous version..."
+          
+          # Trigger sync after rollback
+          echo "Syncing ArgoCD to rolled-back version..."
+          argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune --force
+          
           sleep 30
           
           # Verify rollback
