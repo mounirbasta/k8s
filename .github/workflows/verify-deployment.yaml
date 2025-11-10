@@ -46,8 +46,8 @@ jobs:
       - name: Wait and check health
         id: health
         run: |
-          echo "Waiting 2 minutes for deployment..."
-          sleep 120
+          echo "Waiting 4 minutes for deployment..."
+          sleep 240
           
           HEALTH=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.health.status')
           
