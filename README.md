@@ -13,6 +13,7 @@ This repository implements a complete GitOps-managed Kubernetes environment usin
 - **NGINX Ingress Controller**: Installed and configured for traffic routing
 - **ArgoCD**: GitOps tool for continuous deployment and synchronization
 - **Monitoring Stack**: Comprehensive observability suite
+- **Python App**: Python application containing info about users and products
 
 ### Monitoring & Observability Stack
 - **Grafana with Custom Dashboards**:
