@@ -254,9 +254,7 @@ spec:
 ```
 
 > **⚠️ SSL Note**: The application currently shows a fake/self-signed certificate because this is a development environment. In production, ensure:
-> - Domain `py7hon.com` points to your cluster IP
-> - Let's Encrypt can reach your domain for HTTP-01 challenges
-> - Firewall rules allow HTTP traffic on port 80 for ACME challenges
+> - Use a Certificate from a trusted source
 
 ### Verifying Certificate Status
 
