@@ -59,7 +59,7 @@ data:
 
     // Built-in node_exporter for system metrics
     prometheus.exporter.unix "node_exporter" {
-      set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "netstat", "stat"]
+      set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "netstat", "stat", "uname"]
     }
 
     // Scrape the built-in node_exporter
