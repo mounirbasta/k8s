@@ -423,7 +423,7 @@ spec:
 ```
 
 ### Health Monitoring Pipeline
-The paste1 health check pipeline:
+The health check pipeline:
 - Monitors deployment health automatically
 - Triggers on webhook events from ArgoCD
 - If health checks fail, ArgoCD automatically reverts to the last working commit
