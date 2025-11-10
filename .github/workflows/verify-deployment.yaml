@@ -1,0 +1,86 @@
+name: Verify Deployment Health
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'deployments/app-deployment.yaml'  # Only trigger on deployment changes
+
+env:
+  ARGOCD_APP_NAME: app-dev
+  HEALTH_CHECK_TIMEOUT: 300  # 5 minutes
+
+jobs:
+  verify-and-rollback:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for rollback
+      
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          sudo install -m 555 argocd /usr/local/bin/argocd
+          rm argocd
+
+      - name: Login to ArgoCD
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} \
+            --username ${{ secrets.ARGOCD_USERNAME }} \
+            --password ${{ secrets.ARGOCD_PASSWORD }} \
+            --grpc-web --insecure
+
+      - name: Trigger sync and wait
+        id: sync
+        run: |
+          echo "Triggering ArgoCD sync..."
+          argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune
+          
+          echo "Waiting for sync and health check..."
+          argocd app wait ${{ env.ARGOCD_APP_NAME }} \
+            --timeout ${{ env.HEALTH_CHECK_TIMEOUT }} \
+            --health \
+            --sync
+
+      - name: Check deployment health
+        id: health
+        run: |
+          HEALTH=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.health.status')
+          SYNC=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.sync.status')
+          
+          echo "Health Status: $HEALTH"
+          echo "Sync Status: $SYNC"
+          
+          if [ "$HEALTH" != "Healthy" ] || [ "$SYNC" != "Synced" ]; then
+            echo "Deployment unhealthy!"
+            exit 1
+          fi
+          
+          echo "Deployment is healthy!"
+
+      - name: Rollback on failure
+        if: failure() && steps.health.conclusion == 'failure'
+        run: |
+          echo "🔄 Health check failed - reverting Git commit..."
+          
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # Get the commit that triggered this
+          BAD_COMMIT=$(git rev-parse HEAD)
+          echo "Reverting commit: $BAD_COMMIT"
+          
+          # Revert the bad commit
+          git revert HEAD --no-edit
+          git push origin main
+          
+          echo "Git rollback completed - ArgoCD will auto-sync to previous version"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Deployment failed health check and was rolled back!"
+           
