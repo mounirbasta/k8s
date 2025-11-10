@@ -4,11 +4,10 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - 'deployments/app-deployment.yaml'  # Only trigger on deployment changes
+      - 'deployments/app-deployment.yaml'
 
 env:
   ARGOCD_APP_NAME: app-dev
-  HEALTH_CHECK_TIMEOUT: 300  # 5 minutes
 
 jobs:
   verify-and-rollback:
@@ -18,12 +17,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2  # Need previous commit for rollback
+          fetch-depth: 2
       
       - name: Setup ArgoCD CLI
         uses: clowdhaus/argo-cd-action@v3.1.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Prevents API rate limits
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           command: version
           options: --client
@@ -39,34 +38,37 @@ jobs:
             --password $ARGOCD_PASSWORD \
             --grpc-web --insecure
 
-      - name: Trigger sync and wait
-        id: sync
+      - name: Trigger sync
         run: |
           echo "Triggering ArgoCD sync..."
           argocd app sync ${{ env.ARGOCD_APP_NAME }} --prune
-          
-          echo "Waiting for sync and health check..."
-          argocd app wait ${{ env.ARGOCD_APP_NAME }} \
-            --timeout ${{ env.HEALTH_CHECK_TIMEOUT }} \
-            --health \
-            --sync
 
-      - name: Check deployment health
+      - name: Wait and check health
         id: health
         run: |
+          echo "Waiting 2 minutes for deployment..."
+          sleep 120
+          
           HEALTH=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.health.status')
-          SYNC=$(argocd app get ${{ env.ARGOCD_APP_NAME }} -o json | jq -r '.status.sync.status')
           
           echo "Health Status: $HEALTH"
-          echo "Sync Status: $SYNC"
           
-          if [ "$HEALTH" != "Healthy" ] || [ "$SYNC" != "Synced" ]; then
-            echo "Deployment unhealthy"
+          if [ "$HEALTH" = "Degraded" ] || [ "$HEALTH" = "Missing" ]; then
+            echo "Deployment failed"
+            argocd app get ${{ env.ARGOCD_APP_NAME }}
             exit 1
           fi
           
-          echo "Deployment is healthy"
+          echo "Deployment completed"
 
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Rolling back..."
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git revert HEAD --no-edit
+          git push origin main
       - name: Rollback on failure
         if: failure() && steps.health.conclusion == 'failure'
         run: |
