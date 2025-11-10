@@ -304,7 +304,7 @@ curl -X PUT \
 - **Trigger**: On every commit and PR
 - **Action**: Blocks deployment if critical vulnerabilities detected
 
-### Health Check Pipeline (paste1)
+### Health Check Pipeline
 - **Purpose**: Automated deployment health verification
 - **Trigger**: Via GitHub webhooks on ArgoCD sync
 - **Features**:
@@ -312,6 +312,7 @@ curl -X PUT \
   - Service endpoint validation
   - Resource utilization monitoring
   - Automatic rollback on failure (ArgoCD will revert to last working commit)
+  - Commit revert to the last commit to make the repo updated with Argocd
 
 ## 🎣 GitHub Webhook Configuration
 
