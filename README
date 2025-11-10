@@ -1,213 +1,318 @@
-# My App - Kubernetes Manifests
+Kubernetes GitOps Repository with ArgoCD, Monitoring, and CI/CD
+📋 Overview
+This repository implements a complete GitOps-managed Kubernetes environment using ArgoCD for continuous deployment. The infrastructure includes a production-ready Kubernetes cluster with comprehensive monitoring, security scanning, and automated deployment pipelines.
 
-GitOps repository for deploying My App to Kubernetes clusters.
+⚠️ Important Note: This is currently a development environment running on the main branch. For production use, consider implementing branch protection and environment segregation.
 
-## Repository Structure
+🏗️ Architecture Components
+Core Infrastructure
+Kubernetes Cluster: Provisioned via Terraform (GCP GKE)
 
-```
+NGINX Ingress Controller: Installed and configured for traffic routing
+
+ArgoCD: GitOps tool for continuous deployment and synchronization
+
+Monitoring Stack: Comprehensive observability suite
+
+Monitoring & Observability Stack
+Grafana with Custom Dashboards:
+
+K8S Dashboard: Kubernetes cluster visualization and management
+
+Logs / App Dashboard: Application performance and log analysis
+
+Node Exporter Full: Complete node-level metrics and hardware monitoring
+
+Alloy: Metrics and logs collection agent
+
+Prometheus: Metrics storage and alerting
+
+Loki: Log aggregation system
+
+🔗 Access URLs
+Service	URL	Purpose
+ArgoCD	http://wwwargo.com	GitOps deployment management
+Dashboard	http://136.119.151.203/dashboards	Grafana monitoring dashboards
+Python Application	https://py7hon.com/	Deployed application endpoint
+📁 Complete Repository Structure
+text
 .
-├── namespaces/          # Namespace definitions per environment
-├── deployments/         # Deployment manifests per environment
-├── services/            # Service manifests per environment
-├── configmaps/          # ConfigMap manifests per environment
-├── secrets/             # Secret manifests per environment
-└── ingresses/           # Ingress manifests per environment
-```
+├── README
+├── argocd
+│   ├── README
+│   └── app-dev-application.yaml
+├── configmaps
+│   ├── alloy-config.yaml
+│   ├── app-config.yaml
+│   ├── grafana-datasources.yaml
+│   ├── loki-config.yaml
+│   └── prometheus-config.yaml
+├── daemonset
+│   ├── alloy-daemonset.yaml
+│   └── app-daemonset.yaml
+├── deployments
+│   ├── app-deployment.yaml
+│   ├── grafana-deployment.yaml
+│   ├── loki-deployment.yaml
+│   └── prometheus-deployment.yaml
+├── ingresses
+│   ├── alloy-dev.yaml
+│   ├── app-dev.yaml
+│   ├── argo-dev.yaml
+│   └── grafana-dev.yaml
+├── namespaces
+│   ├── app-namespace.yaml
+│   └── monitoring-namespace.yaml
+├── rbac
+│   └── alloy-rbac.yaml
+├── secrets
+│   ├── app-secrets.yaml
+│   └── grafana-secrets.yaml
+└── services
+    ├── alloy-service.yaml
+    ├── app-service.yaml
+    ├── grafana-service.yaml
+    ├── loki-service.yaml
+    └── prometheus-service.yaml
 
-## Current Environments
+10 directories, 28 files
+🚀 Getting Started
+Prerequisites
+Clone and Setup Terraform Infrastructure:
 
-- **dev**: Development environment with 1 replica
+bash
+git clone https://github.com/mounirbasta/terraform
+cd terraform
+# Follow Terraform repository instructions to provision the cluster
+Authenticate to GCP Kubernetes Cluster:
 
-## Application Details
+bash
+gcloud auth login
+gcloud auth configure-docker
+gcloud container clusters get-credentials app-cluster \
+  --zone us-central1-a \
+  --project {your-project-name}
+Clone This Repository:
 
-- **Base Image**: python:3.9-slim-buster
-- **Port**: 5000
-- **Health Check**: `/health` endpoint
-- **Security**: Runs as non-root user (UID 1000)
+bash
+git clone {this-repo-url}
+cd {repository-name}
+Initial Setup
+Apply Namespaces:
 
-## Prerequisites
-
-- Kubernetes cluster 
-- kubectl configured
-- Ingress controller (nginx recommended)
-- cert-manager (optional, for automatic SSL)
-
-## Deployment Instructions
-
-### Apply All Manifests (Recommended Order)
-
-```bash
-# 1. Create namespace
-kubectl apply -f namespaces/app-dev.yaml
-
-# 2. Create configmap and secrets
-kubectl apply -f configmaps/app-dev.yaml
-kubectl apply -f secrets/app-dev.yaml
-
-# 3. Create deployment
-kubectl apply -f deployments/app-dev.yaml
-
-# 4. Create service
-kubectl apply -f services/app-dev.yaml
-
-# 5. Create ingress (optional)
-kubectl apply -f ingresses/app-dev.yaml
-```
-
-### Or Apply All at Once
-
-```bash
+bash
 kubectl apply -f namespaces/
+Install NGINX Ingress Controller:
+
+bash
+# Add NGINX Ingress Controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+Deploy Monitoring Stack:
+
+bash
 kubectl apply -f configmaps/
 kubectl apply -f secrets/
+kubectl apply -f rbac/
+kubectl apply -f daemonset/
 kubectl apply -f deployments/
 kubectl apply -f services/
 kubectl apply -f ingresses/
-```
+Bootstrap ArgoCD:
 
-## Configuration
+bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-### Before Deploying
+# Get ArgoCD admin password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+Deploy ArgoCD Application:
 
-1. **Update Docker Image**: Edit `deployments/app-dev.yaml`
-   ```yaml
-   image: your-registry/my-app:dev-latest
-   ```
+bash
+kubectl apply -f argocd/app-dev-application.yaml
+🎯 Application Information
+Python Application
+Source Repository: https://github.com/mounirbasta/task
 
-2. **Update Domain**: Edit `ingresses/app-dev.yaml`
-   ```yaml
-   host: my-app-dev.example.com
-   ```
+Production URL: https://py7hon.com/
 
-3. **Add Secrets**: Edit `secrets/app-dev.yaml` with base64 encoded values
-   ```bash
-   echo -n "your-secret-value" | base64
-   ```
+Deployment Method: GitOps via ArgoCD
 
-4. **Add ConfigMap Values**: Edit `configmaps/app-dev.yaml` with your environment variables
+🔄 GitOps Workflow
+Repository Structure Philosophy
+This is a GitOps repository where:
 
-### Environment Variables
+Each application should have its own CI pipeline in its source repository
 
-The application uses environment variables from:
-- ConfigMap: `app-config` (non-sensitive config)
-- Secret: `app-secrets` (sensitive data)
+Application CI pipelines should use GitHub API to update image tags in this repository
 
-## Monitoring
+This repository serves as the single source of truth for cluster state
 
-### Check Deployment Status
+ArgoCD automatically syncs the cluster with this repository
 
-```bash
-kubectl get all -n app-dev
-```
+Application CI Pipeline Requirements
+Each application's CI pipeline should:
 
-### View Logs
+Build and Test: Build container image and run tests
 
-```bash
-kubectl logs -f deployment/my-app -n app-dev
-```
+Security Scan: Perform vulnerability scanning
 
-### Check Pod Health
+Update GitOps Repo: Use GitHub API to update image tags in this repository
 
-```bash
-kubectl describe pod -l app=my-app -n app-dev
-```
+bash
+# Example: Update image tag via GitHub API
+curl -X PUT \
+  -H "Authorization: token $GITHUB_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Update app image to v1.2.3",
+    "content": "'$(base64 -w 0 deployment.yaml)'",
+    "sha": "existing_file_sha"
+  }' \
+  https://api.github.com/repos/owner/repo/contents/applications/app/deployment.yaml
+🔧 Pipeline Integrations
+Security Scanning Pipeline
+Tool: Trivy
 
-### Port Forward for Local Testing
+Purpose: Container vulnerability scanning
 
-```bash
-kubectl port-forward svc/my-app 8080:80 -n app-dev
-# Access at http://localhost:8080
-```
+Trigger: On every commit and PR
 
-## Resource Limits
+Action: Blocks deployment if critical vulnerabilities detected
 
-### Dev Environment
-- CPU Request: 100m
-- CPU Limit: 500m
-- Memory Request: 128Mi
-- Memory Limit: 512Mi
+Health Check Pipeline (paste1)
+Purpose: Automated deployment health verification
 
-## Health Checks
+Trigger: Via GitHub webhooks on ArgoCD sync
 
-- **Liveness Probe**: Checks if container is alive (restarts if failing)
-- **Readiness Probe**: Checks if container can accept traffic
-- **Endpoint**: `GET /health` on port 5000
+Features:
 
-## Security Features
+Health checks against deployed application
 
-- Non-root user (UID 1000)
-- Read-only root filesystem capability
-- Dropped all Linux capabilities
-- No privilege escalation
+Service endpoint validation
 
-## Troubleshooting
+Resource utilization monitoring
 
-### Pod Not Starting
+Automatic rollback on failure (ArgoCD will revert to last working commit)
 
-```bash
-kubectl describe pod -l app=app -n app-dev
-kubectl logs -l app=app -n app-dev
-```
+🎣 GitHub Webhook Configuration
+Manual Webhook Setup (via GitHub UI)
+Navigate to Repository Settings → Webhooks → Add webhook
 
-### Health Check Failing
+Configuration:
 
-Ensure your application has a `/health` endpoint that returns 200 OK.
+Payload URL: http://wwwargo.com/api/webhook
 
-### Image Pull Errors
+Content type: application/json
 
-Check image registry credentials:
-```bash
-kubectl get events -n app-dev
-```
+Secret: [Your webhook secret]
 
-## GitOps Integration
+Events: Just the push event
 
-### ArgoCD
+Active: ✓
 
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: app-dev
-spec:
-  source:
-    repoURL: https://github.com/your-org/your-repo
-    targetRevision: main
-    path: .
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: my-app-dev
-```
+Purpose: Enables push-based ArgoCD synchronization
 
-### Flux
+Behavior: Automatically triggers ArgoCD sync on push to main branch
 
-```yaml
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: my-app-dev
-spec:
-  interval: 5m
-  path: ./
-  prune: true
-  sourceRef:
-    kind: GitRepository
-    name: my-app-repo
-```
+📊 Monitoring Architecture
+Alloy Configuration
+Alloy is deployed as a DaemonSet to collect:
 
-## Adding More Environments
+Metrics: Scraped from Prometheus endpoints
 
-To add staging or production:
+Logs: Collected from all pods and nodes
 
-1. Copy dev manifests
-2. Rename files: `app-staging.yaml`, `app-production.yaml`
-3. Update namespace in each file
-4. Adjust replicas and resources in deployment
-5. Update domain in ingress
+Transport: Forwarded to Loki and Prometheus
 
-## Notes
+Grafana Dashboards
+Pre-configured dashboards include:
 
-- Always test changes in dev before promoting to production
-- Use proper secret management (External Secrets, Sealed Secrets, or Vault)
-- Monitor resource usage and adjust limits accordingly
-- Keep this README updated with environment-specific details
+K8S Dashboard: Cluster resource usage, pod status, node metrics
+
+Logs / App Dashboard: Application logs, performance metrics, error rates
+
+Node Exporter Full: CPU, memory, disk, network metrics per node
+
+Data Flow
+text
+Applications → Alloy (DaemonSet) → Prometheus (Metrics) + Loki (Logs) → Grafana (Dashboards)
+🔒 Security
+Authentication & Access
+bash
+# GCP Authentication
+gcloud auth login
+gcloud config set project [PROJECT_ID]
+gcloud container clusters get-credentials [CLUSTER_NAME] --zone [ZONE]
+
+# ArgoCD Access
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Username: admin
+# Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+Vulnerability Management
+Trivy Scanning: Integrated in CI pipeline
+
+Image Security: Regular vulnerability scans
+
+Access Control: GCP IAM integrated RBAC
+
+🛠️ Application Management
+Adding New Applications
+Create Application Manifests in appropriate directories
+
+Update ArgoCD Application configuration
+
+Configure CI/CD in application repository to update this GitOps repo
+
+Health Monitoring Pipeline
+The paste1 health check pipeline:
+
+Monitors deployment health automatically
+
+Triggers on webhook events from ArgoCD
+
+If health checks fail, ArgoCD automatically reverts to the last working commit
+
+Provides deployment validation and automatic rollback
+
+🔧 Troubleshooting
+Common Commands
+bash
+# Check ArgoCD status
+kubectl get applications -n argocd
+argocd app sync [app-name]
+
+# Check NGINX Ingress
+kubectl get pods -n ingress-nginx
+kubectl get ing -A
+
+# Access Monitoring
+kubectl port-forward -n monitoring svc/grafana 3000:3000
+
+# Check Alloy logs
+kubectl logs -l app=alloy -n monitoring
+
+# Verify deployments
+kubectl get deployments -n app-dev
+kubectl get deployments -n monitoring
+Getting ArgoCD Password
+bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+Webhook Troubleshooting
+Verify webhook is active in GitHub repository settings
+
+Check webhook deliveries for errors
+
+Ensure ArgoCD ingress is properly configured
+
+Verify webhook secret matches ArgoCD configuration
+
+📝 Notes
+GitOps Principle: This repository is the single source of truth for cluster state
+
+Automated Rollbacks: Health check failures trigger automatic reversion to working commits
+
+Manual Webhook: Webhook configured manually via GitHub UI for ArgoCD push-based sync
+
+Monitoring: Alloy-based collection with pre-configured Grafana dashboards
+
+Security: Integrated Trivy scanning and GCP authentication
