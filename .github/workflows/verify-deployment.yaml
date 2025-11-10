@@ -5,7 +5,8 @@ on:
     branches: [ "main" ]
     paths:
       - 'deployments/app-deployment.yaml'
-
+permissions:
+  contents: write 
 env:
   ARGOCD_APP_NAME: app-dev
   APP_NAMESPACE: app-dev
