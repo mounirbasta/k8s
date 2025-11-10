@@ -1,41 +1,39 @@
-Kubernetes GitOps Repository with ArgoCD, Monitoring, and CI/CD
-📋 Overview
+# Kubernetes GitOps Repository with ArgoCD, Monitoring, and CI/CD
+
+## 📋 Overview
+
 This repository implements a complete GitOps-managed Kubernetes environment using ArgoCD for continuous deployment. The infrastructure includes a production-ready Kubernetes cluster with comprehensive monitoring, security scanning, and automated deployment pipelines.
 
-⚠️ Important Note: This is currently a development environment running on the main branch. For production use, consider implementing branch protection and environment segregation.
+> **⚠️ Important Note**: This is currently a development environment running on the main branch. For production use, consider implementing branch protection and environment segregation.
 
-🏗️ Architecture Components
-Core Infrastructure
-Kubernetes Cluster: Provisioned via Terraform (GCP GKE)
+## 🏗️ Architecture Components
 
-NGINX Ingress Controller: Installed and configured for traffic routing
+### Core Infrastructure
+- **Kubernetes Cluster**: Provisioned via Terraform (GCP GKE)
+- **NGINX Ingress Controller**: Installed and configured for traffic routing
+- **ArgoCD**: GitOps tool for continuous deployment and synchronization
+- **Monitoring Stack**: Comprehensive observability suite
 
-ArgoCD: GitOps tool for continuous deployment and synchronization
+### Monitoring & Observability Stack
+- **Grafana with Custom Dashboards**:
+  - K8S Dashboard: Kubernetes cluster visualization and management
+  - Logs / App Dashboard: Application performance and log analysis
+  - Node Exporter Full: Complete node-level metrics and hardware monitoring
+- **Alloy**: Metrics and logs collection agent
+- **Prometheus**: Metrics storage and alerting
+- **Loki**: Log aggregation system
 
-Monitoring Stack: Comprehensive observability suite
+## 🔗 Access URLs
 
-Monitoring & Observability Stack
-Grafana with Custom Dashboards:
+| Service | URL | Purpose |
+|---------|-----|---------|
+| ArgoCD | http://wwwargo.com | GitOps deployment management |
+| Dashboard | http://136.119.151.203/dashboards | Grafana monitoring dashboards |
+| Python Application | https://py7hon.com/ | Deployed application endpoint |
 
-K8S Dashboard: Kubernetes cluster visualization and management
+## 📁 Repository Structure
 
-Logs / App Dashboard: Application performance and log analysis
-
-Node Exporter Full: Complete node-level metrics and hardware monitoring
-
-Alloy: Metrics and logs collection agent
-
-Prometheus: Metrics storage and alerting
-
-Loki: Log aggregation system
-
-🔗 Access URLs
-Service	URL	Purpose
-ArgoCD	http://wwwargo.com	GitOps deployment management
-Dashboard	http://136.119.151.203/dashboards	Grafana monitoring dashboards
-Python Application	https://py7hon.com/	Deployed application endpoint
-📁 Complete Repository Structure
-text
+```
 .
 ├── README
 ├── argocd
@@ -76,89 +74,96 @@ text
     └── prometheus-service.yaml
 
 10 directories, 28 files
-🚀 Getting Started
-Prerequisites
-Clone and Setup Terraform Infrastructure:
+```
 
-bash
-git clone https://github.com/mounirbasta/terraform
-cd terraform
-# Follow Terraform repository instructions to provision the cluster
-Authenticate to GCP Kubernetes Cluster:
+## 🚀 Getting Started
 
-bash
-gcloud auth login
-gcloud auth configure-docker
-gcloud container clusters get-credentials app-cluster \
-  --zone us-central1-a \
-  --project {your-project-name}
-Clone This Repository:
+### Prerequisites
 
-bash
-git clone {this-repo-url}
-cd {repository-name}
-Initial Setup
-Apply Namespaces:
+1. **Clone and Setup Terraform Infrastructure**:
+   ```bash
+   git clone https://github.com/mounirbasta/terraform
+   cd terraform
+   # Follow Terraform repository instructions to provision the cluster
+   ```
 
-bash
-kubectl apply -f namespaces/
-Install NGINX Ingress Controller:
+2. **Authenticate to GCP Kubernetes Cluster**:
+   ```bash
+   gcloud auth login
+   gcloud auth configure-docker
+   gcloud container clusters get-credentials app-cluster \
+     --zone us-central1-a \
+     --project {your-project-name}
+   ```
 
-bash
-# Add NGINX Ingress Controller
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
-Deploy Monitoring Stack:
+3. **Clone This Repository**:
+   ```bash
+   git clone {this-repo-url}
+   cd {repository-name}
+   ```
 
-bash
-kubectl apply -f configmaps/
-kubectl apply -f secrets/
-kubectl apply -f rbac/
-kubectl apply -f daemonset/
-kubectl apply -f deployments/
-kubectl apply -f services/
-kubectl apply -f ingresses/
-Bootstrap ArgoCD:
+### Initial Setup
 
-bash
-kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+1. **Apply Namespaces**:
+   ```bash
+   kubectl apply -f namespaces/
+   ```
 
-# Get ArgoCD admin password
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-Deploy ArgoCD Application:
+2. **Install NGINX Ingress Controller**:
+   ```bash
+   # Add NGINX Ingress Controller
+   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+   ```
 
-bash
-kubectl apply -f argocd/app-dev-application.yaml
-🎯 Application Information
-Python Application
-Source Repository: https://github.com/mounirbasta/task
+3. **Deploy Monitoring Stack**:
+   ```bash
+   kubectl apply -f configmaps/
+   kubectl apply -f secrets/
+   kubectl apply -f rbac/
+   kubectl apply -f daemonset/
+   kubectl apply -f deployments/
+   kubectl apply -f services/
+   kubectl apply -f ingresses/
+   ```
 
-Production URL: https://py7hon.com/
+4. **Bootstrap ArgoCD**:
+   ```bash
+   kubectl create namespace argocd
+   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+   
+   # Get ArgoCD admin password
+   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+   ```
 
-Deployment Method: GitOps via ArgoCD
+5. **Deploy ArgoCD Application**:
+   ```bash
+   kubectl apply -f argocd/app-dev-application.yaml
+   ```
 
-🔄 GitOps Workflow
-Repository Structure Philosophy
+## 🎯 Application Information
+
+### Python Application
+- **Source Repository**: https://github.com/mounirbasta/task
+- **Production URL**: https://py7hon.com/
+- **Deployment Method**: GitOps via ArgoCD
+
+## 🔄 GitOps Workflow
+
+### Repository Structure Philosophy
 This is a GitOps repository where:
+- Each application should have its own CI pipeline in its source repository
+- Application CI pipelines should use GitHub API to update image tags in this repository
+- This repository serves as the single source of truth for cluster state
+- ArgoCD automatically syncs the cluster with this repository
 
-Each application should have its own CI pipeline in its source repository
-
-Application CI pipelines should use GitHub API to update image tags in this repository
-
-This repository serves as the single source of truth for cluster state
-
-ArgoCD automatically syncs the cluster with this repository
-
-Application CI Pipeline Requirements
+### Application CI Pipeline Requirements
 Each application's CI pipeline should:
 
-Build and Test: Build container image and run tests
+1. **Build and Test**: Build container image and run tests
+2. **Security Scan**: Perform vulnerability scanning
+3. **Update GitOps Repo**: Use GitHub API to update image tags in this repository
 
-Security Scan: Perform vulnerability scanning
-
-Update GitOps Repo: Use GitHub API to update image tags in this repository
-
-bash
+```bash
 # Example: Update image tag via GitHub API
 curl -X PUT \
   -H "Authorization: token $GITHUB_TOKEN" \
@@ -169,76 +174,63 @@ curl -X PUT \
     "sha": "existing_file_sha"
   }' \
   https://api.github.com/repos/owner/repo/contents/applications/app/deployment.yaml
-🔧 Pipeline Integrations
-Security Scanning Pipeline
-Tool: Trivy
+```
 
-Purpose: Container vulnerability scanning
+## 🔧 Pipeline Integrations
 
-Trigger: On every commit and PR
+### Security Scanning Pipeline
+- **Tool**: Trivy
+- **Purpose**: Container vulnerability scanning
+- **Trigger**: On every commit and PR
+- **Action**: Blocks deployment if critical vulnerabilities detected
 
-Action: Blocks deployment if critical vulnerabilities detected
+### Health Check Pipeline (paste1)
+- **Purpose**: Automated deployment health verification
+- **Trigger**: Via GitHub webhooks on ArgoCD sync
+- **Features**:
+  - Health checks against deployed application
+  - Service endpoint validation
+  - Resource utilization monitoring
+  - Automatic rollback on failure (ArgoCD will revert to last working commit)
 
-Health Check Pipeline (paste1)
-Purpose: Automated deployment health verification
+## 🎣 GitHub Webhook Configuration
 
-Trigger: Via GitHub webhooks on ArgoCD sync
+### Manual Webhook Setup (via GitHub UI)
+1. Navigate to **Repository Settings → Webhooks → Add webhook**
+2. **Configuration**:
+   - **Payload URL**: `http://wwwargo.com/api/webhook`
+   - **Content type**: `application/json`
+   - **Secret**: [Your webhook secret]
+   - **Events**: Just the push event
+   - **Active**: ✓
 
-Features:
+**Purpose**: Enables push-based ArgoCD synchronization  
+**Behavior**: Automatically triggers ArgoCD sync on push to main branch
 
-Health checks against deployed application
+## 📊 Monitoring Architecture
 
-Service endpoint validation
-
-Resource utilization monitoring
-
-Automatic rollback on failure (ArgoCD will revert to last working commit)
-
-🎣 GitHub Webhook Configuration
-Manual Webhook Setup (via GitHub UI)
-Navigate to Repository Settings → Webhooks → Add webhook
-
-Configuration:
-
-Payload URL: http://wwwargo.com/api/webhook
-
-Content type: application/json
-
-Secret: [Your webhook secret]
-
-Events: Just the push event
-
-Active: ✓
-
-Purpose: Enables push-based ArgoCD synchronization
-
-Behavior: Automatically triggers ArgoCD sync on push to main branch
-
-📊 Monitoring Architecture
-Alloy Configuration
+### Alloy Configuration
 Alloy is deployed as a DaemonSet to collect:
+- **Metrics**: Scraped from Prometheus endpoints
+- **Logs**: Collected from all pods and nodes
+- **Transport**: Forwarded to Loki and Prometheus
 
-Metrics: Scraped from Prometheus endpoints
-
-Logs: Collected from all pods and nodes
-
-Transport: Forwarded to Loki and Prometheus
-
-Grafana Dashboards
+### Grafana Dashboards
 Pre-configured dashboards include:
+- **K8S Dashboard**: Cluster resource usage, pod status, node metrics
+- **Logs / App Dashboard**: Application logs, performance metrics, error rates
+- **Node Exporter Full**: CPU, memory, disk, network metrics per node
 
-K8S Dashboard: Cluster resource usage, pod status, node metrics
-
-Logs / App Dashboard: Application logs, performance metrics, error rates
-
-Node Exporter Full: CPU, memory, disk, network metrics per node
-
-Data Flow
-text
+### Data Flow
+```
 Applications → Alloy (DaemonSet) → Prometheus (Metrics) + Loki (Logs) → Grafana (Dashboards)
-🔒 Security
-Authentication & Access
-bash
+```
+
+## 🔒 Security
+
+### Authentication & Access
+
+```bash
 # GCP Authentication
 gcloud auth login
 gcloud config set project [PROJECT_ID]
@@ -248,35 +240,32 @@ gcloud container clusters get-credentials [CLUSTER_NAME] --zone [ZONE]
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 # Username: admin
 # Password: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-Vulnerability Management
-Trivy Scanning: Integrated in CI pipeline
+```
 
-Image Security: Regular vulnerability scans
+### Vulnerability Management
+- **Trivy Scanning**: Integrated in CI pipeline
+- **Image Security**: Regular vulnerability scans
+- **Access Control**: GCP IAM integrated RBAC
 
-Access Control: GCP IAM integrated RBAC
+## 🛠️ Application Management
 
-🛠️ Application Management
-Adding New Applications
-Create Application Manifests in appropriate directories
+### Adding New Applications
+1. Create Application Manifests in appropriate directories
+2. Update ArgoCD Application configuration
+3. Configure CI/CD in application repository to update this GitOps repo
 
-Update ArgoCD Application configuration
-
-Configure CI/CD in application repository to update this GitOps repo
-
-Health Monitoring Pipeline
+### Health Monitoring Pipeline
 The paste1 health check pipeline:
+- Monitors deployment health automatically
+- Triggers on webhook events from ArgoCD
+- If health checks fail, ArgoCD automatically reverts to the last working commit
+- Provides deployment validation and automatic rollback
 
-Monitors deployment health automatically
+## 🔧 Troubleshooting
 
-Triggers on webhook events from ArgoCD
+### Common Commands
 
-If health checks fail, ArgoCD automatically reverts to the last working commit
-
-Provides deployment validation and automatic rollback
-
-🔧 Troubleshooting
-Common Commands
-bash
+```bash
 # Check ArgoCD status
 kubectl get applications -n argocd
 argocd app sync [app-name]
@@ -294,25 +283,24 @@ kubectl logs -l app=alloy -n monitoring
 # Verify deployments
 kubectl get deployments -n app-dev
 kubectl get deployments -n monitoring
-Getting ArgoCD Password
-bash
+```
+
+### Getting ArgoCD Password
+
+```bash
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-Webhook Troubleshooting
-Verify webhook is active in GitHub repository settings
+```
 
-Check webhook deliveries for errors
+### Webhook Troubleshooting
+- Verify webhook is active in GitHub repository settings
+- Check webhook deliveries for errors
+- Ensure ArgoCD ingress is properly configured
+- Verify webhook secret matches ArgoCD configuration
 
-Ensure ArgoCD ingress is properly configured
+## 📝 Notes
 
-Verify webhook secret matches ArgoCD configuration
-
-📝 Notes
-GitOps Principle: This repository is the single source of truth for cluster state
-
-Automated Rollbacks: Health check failures trigger automatic reversion to working commits
-
-Manual Webhook: Webhook configured manually via GitHub UI for ArgoCD push-based sync
-
-Monitoring: Alloy-based collection with pre-configured Grafana dashboards
-
-Security: Integrated Trivy scanning and GCP authentication
+- **GitOps Principle**: This repository is the single source of truth for cluster state
+- **Automated Rollbacks**: Health check failures trigger automatic reversion to working commits
+- **Manual Webhook**: Webhook configured manually via GitHub UI for ArgoCD push-based sync
+- **Monitoring**: Alloy-based collection with pre-configured Grafana dashboards
+- **Security**: Integrated Trivy scanning and GCP authentication
