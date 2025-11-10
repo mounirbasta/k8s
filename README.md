@@ -2,7 +2,7 @@
 
 ## 📋 Overview
 
-This repository implements a complete GitOps-managed Kubernetes environment using ArgoCD for continuous deployment. The infrastructure includes a production-ready Kubernetes cluster with comprehensive monitoring, security scanning, and automated deployment pipelines.
+This repository implements a complete GitOps-managed Kubernetes environment using ArgoCD for continuous deployment. The infrastructure includes a Kubernetes cluster with comprehensive monitoring, security scanning, and automated deployment pipelines.
 
 > **⚠️ Important Note**: This is currently a development environment running on the main branch. For production use, consider implementing branch protection and environment segregation.
 
