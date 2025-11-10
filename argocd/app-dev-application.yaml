@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io  # Ensures proper cleanup
+spec:
+  # The project this application belongs to
+  project: default
+  source:
+    repoURL: https://github.com/mounirbasta/k8s
+    targetRevision: main
+    path: .
+    directory:
+      recurse: true  # CRITICAL: Look in all subdirectories for manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app-dev
+  syncPolicy:
+    automated:
+      prune: true  # Delete resources that are removed from Git
+      selfHeal: true  # Auto-sync when cluster state differs from Git
+      allowEmpty: false  # Don't sync if repo is empty
+    syncOptions:
+      - CreateNamespace=true  # Create namespace if it doesn't exist
+      - PrunePropagationPolicy=foreground  # Delete in correct order
+      - PruneLast=true  # Delete resources after new ones are healthy
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Ignore if HPA changes replicas

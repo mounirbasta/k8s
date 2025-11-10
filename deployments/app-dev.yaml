@@ -18,6 +18,7 @@ spec:
         app: app
         environment: dev
     spec:
+      serviceAccountName: gcr-sa
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

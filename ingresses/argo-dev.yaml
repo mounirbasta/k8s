@@ -1,23 +1,27 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: app-server-ingress
-  namespace: app-dev
+  name: argocd-server-ingress
+  namespace: argocd
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
 spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - py7hon.com
+    - wwwargo.com
+    secretName: argocd-server-tls
   rules:
-  - host: py7hon.com
+  - host: wwwargo.com
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: app
+            name: argocd-server
             port:
               number: 443
+
+
